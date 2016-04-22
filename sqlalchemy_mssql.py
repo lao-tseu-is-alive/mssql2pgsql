@@ -1,5 +1,8 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
+import re
+import datetime
+import pyodbc
 import sqlalchemy as sa
 import sqlalchemy.exc
 import sqlalchemy.sql.schema
@@ -36,6 +39,74 @@ def action_query(ms_engine, action_query):
         connection.close()
 
 
+def query_filter(sql):
+    sql_clean = sql.strip()
+    bad_sql = {'--', 'DROP', 'TRUNCATE', 'DELETE', 'UPDATE', 'INSERT', 'CREATE', 'sysobjects'}
+    remove = '|'.join(bad_sql)
+    regex = re.compile(r'\b(' + remove + r')\b', flags=re.IGNORECASE)
+    sql_clean = regex.sub("", sql_clean)
+    sql_clean = sql_clean.replace(';', '')
+    sql_clean = sql_clean.replace('--', '')
+    return sql_clean
+
+
+def query(ms_engine, sql, print_header=True, result_format="text"):
+    """
+    will execute the sql query against the database defined in config and print the result to standard output
+    :param sql: string with sql query, internally will clean any by removing -- ;INSERT,UPDATE,DROP etc..
+    :param print_header: boolean (default True) defining if you want column name header displayed
+    :param result_format: string (default text) defining the format of output actually only text is supported
+    :return: boolean False if something went wrong
+    """
+    field_max_width = 80
+    my_cursor = get_cursor(ms_engine)
+    if my_cursor:
+        try:
+            print("## MSSQL query :{0}".format(query_filter(sql)))
+            my_cursor.execute(query_filter(sql))
+            row = my_cursor.fetchone()
+            if row:
+                if print_header:
+                    header = ""
+                    for field_name, field_type, bof0, field_width, larg2, bof1, bof2 in row.cursor_description:
+                        if field_width > field_max_width:
+                            field_width = field_max_width
+                        if result_format == "text":
+                            header += "[{0: ^{field_width}}]".format(field_name, field_width=field_width)
+                    print(header)
+            while 1:
+                if not row:
+                    break
+                if result_format == "text":
+                    row_result = ""
+                    for i in range(0, len(row)):
+                        field_width = row.cursor_description[i][3]
+                        if field_width > field_max_width:
+                            field_width = field_max_width
+                        if row[i] is None:
+                            row_result += "[ NULL ]"
+                        else:
+                            if type(row[i]) is datetime.datetime:
+                                field_string = '[  {0:%Y-%m-%d %H:%M:%S}  ]'.format(row[i], field_width=field_width)
+                            else:
+                                if len(str(row[i])) > field_max_width:
+                                    field_value = str(row[i])[0:(field_max_width - 3)] + "..."
+                                else:
+                                    field_value = str(row[i])
+                                field_string = "[{0: ^{field_width}}]".format(field_value, field_width=field_width)
+                            row_result += field_string
+
+                    print(row_result)
+
+                row = my_cursor.fetchone()
+        except pyodbc.ProgrammingError as e:
+            print("## MSSQL ERROR ## inside query() while executing sql \n{0}".format(sql))
+            print(e)
+            return False
+        finally:
+            return True
+
+
 def get_tables_list(ms_engine, ms_schema='dbo'):
     """ to get the list of existing tables in a specific schema or in the default schema """
 
@@ -56,18 +127,33 @@ def get_pgsqltype_from_mssql(col):
     else:
         ctype = str(col)
 
-    if ctype == "INTEGER":
+    if ctype in ("INTEGER","TINYINT","SMALLINT") :
         return "integer"
+    elif ctype == "BIGINT":
+        return "bigint"
     elif ctype == "BIT":
         return "boolean"
     elif ctype[:7] == "VARCHAR":
         return "text"
     elif ctype[:8] == "NVARCHAR":
         return "text"
+    elif ctype[:5] == "NCHAR":
+        return "text"
+    elif ctype[:4] == "TEXT":
+        return "text"
+    elif ctype[:5] == "NTEXT":
+        return "text"
+    elif ctype[:6] == "BINARY":
+        #return "bytea({l})".format(l=col.type.length)
+        return "bytea"
+    elif ctype[:9] == "VARBINARY":
+        return "bytea"
     elif ctype[:4] == "CHAR":
         return "char({l})".format(l=col.type.length)
-    elif ctype == "DATETIME":
+    elif ctype in ("SMALLDATETIME", "DATETIME"):
         return "timestamp"
+    elif ctype in ("SMALLMONEY", "MONEY"):
+        return "money"
     elif ctype == "UNIQUEIDENTIFIER":
         return "uuid"
     else:
@@ -128,14 +214,39 @@ def get_select_for_postgresql(ms_engine, mssql_table_name):
                     arr_cols.append(" {name}=COALESCE({src_name},'\\N')".format(name=col_name, src_name=c.name))
                 else:
                     arr_cols.append(
-                        " {name}=COALESCE(CONVERT(VARCHAR,{src_name}),'\\N')".format(name=col_name, src_name=c.name))
+                        " {name}=COALESCE(CONVERT(VARCHAR(1000),{src_name}),'\\N')".format(name=col_name, src_name=c.name))
             else:
                 if col_type == 'text':
                     arr_cols.append(" {name}={src_name}".format(name=col_name, src_name=c.name))
                 else:
                     arr_cols.append(" {name}=CONVERT(VARCHAR,{src_name})".format(name=col_name, src_name=c.name))
 
-        sql_query += ",".join(arr_cols) + "FROM {t} ".format(t=mssql_table_name.lower())
+        sql_query += ",".join(arr_cols) + " FROM {t} ".format(t=mssql_table_name.lower())
         return sql_query
     else:
         print("### ERROR table : {t} NOT FOUND in mssql db ".format(t=mssql_table_name))
+
+
+def get_dbserver_collation(ms_engine):
+    ms_cursor = ms_engine.execute("SELECT CONVERT(VARCHAR,SERVERPROPERTY('Collation')) as encoding")
+    row = ms_cursor.fetchone()
+    if not row:
+        return None
+    else:
+        return row.encoding
+
+
+if __name__ == '__main__':
+    print("##### MSSQL BEGIN Connecting to DATABASE with pyodbc #####")
+    ms_engine = get_engine()
+    my_cursor = get_cursor(ms_engine)
+    print("##### MSSQL DATABASE VERSION with pyodbc #####")
+    my_cursor.execute("SELECT @@version")
+    while 1:
+        row = my_cursor.fetchone()
+        if not row:
+            break
+        print(row[0])
+    print("### MSSQL Executing SQL query to DATABASE with pyodbc ###")
+    query(ms_engine, "select TOP 10 IdDocument, DocTitle, datecreated from document ORDER BY IdDocument DESC")
+    print("##### MSSQL END of TEST with pyodbc #####")

@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
+import re
 import sqlalchemy as sa
 import sqlalchemy.exc
 import config_pgsql as config
@@ -21,10 +22,12 @@ def get_cursor(pg_engine):
 
 
 def bulk_copy(pg_engine, data, pgsql_table_name, field_separator):
+    data.seek(0)
     connection = pg_engine.raw_connection()
     try:
         cursor = connection.cursor()
         cursor.copy_from(data, pgsql_table_name, sep=field_separator)
+
         cursor.close()
         connection.commit()
     except (sa.exc.SQLAlchemyError, sa.exc.DBAPIError) as e:
@@ -72,7 +75,19 @@ def does_table_exist(pg_engine, pgsql_table_name, pg_schema='public'):
     return pgsql_table_name in get_tables_list(pg_engine, pg_schema)
 
 
-def escape_copy_string(s):
-    #s = s.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
-    s = s.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
-    return s
+def get_dbserver_encoding(pg_engine):
+    ms_cursor = pg_engine.execute('SHOW SERVER_ENCODING;')
+    row = ms_cursor.fetchone()
+    if not row:
+        return None
+    else:
+        return row[0]
+
+
+def get_dbclient_encoding(pg_engine):
+    ms_cursor = pg_engine.execute('SHOW CLIENT_ENCODING;')
+    row = ms_cursor.fetchone()
+    if not row:
+        return None
+    else:
+        return row[0]
