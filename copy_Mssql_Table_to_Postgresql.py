@@ -37,21 +37,51 @@ if pg.does_table_exist(pg_engine, pgsql_table_name):
     pg_num_rows = pg.get_count(pg_engine, pgsql_table_name)
     if pg_num_rows > 0:
         print("### PGSQL  will TRUNCATE {dst} BEFORE SYNC #####".format(dst=pgsql_table_name))
-        pg.action_query(pg_engine, 'TRUNCATE ' + pgsql_table_name + ';')
+        pg.truncate_table(pg_engine, pgsql_table_name )
 else:
     sql_create_table = ms.get_postgresql_create_sql(ms_engine,mssql_table_name,pgsql_table_name)
     pg.action_query(pg_engine, sql_create_table)
+pg_num_rows = pg.get_count(pg_engine, pgsql_table_name)
 print("### PGSQL {dst} contains {num} rows BEFORE SYNC #####".format(dst=pgsql_table_name,
                                                                      num=pg_num_rows))
 output_file = open(output_filename,mode="w",encoding="utf-8")
+count = 0
+total = 0
+limit = 20000
+regex = re.compile(r'\\', flags=re.IGNORECASE)
 while 1:
     row = ms_cursor.fetchone()
     if not row:
         break
+    count += 1
     # row_line = FIELD_DELIMITER.join(row).decode("ISO-8859-1").encode("UTF-8") + "\n"
-    row_line = FIELD_DELIMITER.join(['\\N' if f == '\\N' else (re.sub(r'\\', r'\\\\', f)) for f in row]) + "\n"
+    temp_row_array = []
+    for field in row:
+        if field == '\\N':
+            temp_row_array.append(field)
+        else:
+            temp_string = regex.sub(r'\\\\', field)
+            temp_string = temp_string.replace('\r', '')
+            temp_string = temp_string.replace('\n', '\\n')
+            temp_row_array.append(temp_string)
+
+    row_line = FIELD_DELIMITER.join(temp_row_array) + "\n"
+    #row_line = FIELD_DELIMITER.join(['\\N' if f == '\\N' else (re.sub(r'\\', r'\\\\', f)) for f in row]) + "\n"
     output_file.write(row_line)
     data.write(row_line)
+    if count >= limit:
+        total += count
+        count = 0
+        print("### PGSQL flushing data at {num} rows #####".format(num=total))
+        # let's flush content
+        data.seek(0)
+        if pg.bulk_copy(pg_engine, data, pgsql_table_name, FIELD_DELIMITER):
+            data.truncate(0)
+            data.seek(0)
+            output_file.flush()
+        else:
+            exit("### PGSQL did have problems trying to import this data")
+
 #print(data.getvalue())
 data.seek(0)
 pg.bulk_copy(pg_engine, data, pgsql_table_name, FIELD_DELIMITER)

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import re
 import sqlalchemy as sa
+import psycopg2
 import sqlalchemy.exc
 import config_pgsql as config
 import urllib
@@ -30,9 +31,29 @@ def bulk_copy(pg_engine, data, pgsql_table_name, field_separator):
 
         cursor.close()
         connection.commit()
-    except (sa.exc.SQLAlchemyError, sa.exc.DBAPIError) as e:
+        return True
+    except (sa.exc.SQLAlchemyError, sa.exc.DBAPIError, psycopg2.DataError ) as e:
         print("## ERROR PGSQL bulk_copy ")
+        print(data.getvalue())
         print("## ERROR PGSQL bulk_copy for table : {table}".format(table=pgsql_table_name))
+        print(e)
+        return False
+
+    finally:
+        connection.close()
+
+
+def truncate_table(pg_engine, pgsql_table_name):
+    connection = pg_engine.raw_connection()
+    try:
+        with  connection.cursor() as cursor:
+            cursor.execute("TRUNCATE {table} RESTART IDENTITY;".format(table=pgsql_table_name))
+            cursor.close()
+        connection.commit()
+        connection.close()
+    except (sa.exc.SQLAlchemyError, sa.exc.DBAPIError, psycopg2.DataError) as e:
+        print("## ERROR PGSQL truncate_table ")
+        print("## ERROR PGSQL truncate_table for table : {table}".format(table=pgsql_table_name))
         print(e)
     finally:
         connection.close()
