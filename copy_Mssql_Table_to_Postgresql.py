@@ -95,5 +95,6 @@ copy_cmd = "COPY {table} FROM '{file}' WITH DELIMITER AS e{fs!r} NULL AS '{null}
     null="\\N")
 
 # COPY table_name FROM '/tmp/table_name.sql' WITH DELIMITER AS e'\x1f' NULL AS '\N';
-print("### PGSQL you can reload this data in psql with :")
+print("### PGSQL a copy of the data imported as been saved in {file}".format(file=output_filename))
+print("### PGSQL you can also reload this data inside psql with :")
 print(copy_cmd)
