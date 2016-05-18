@@ -127,7 +127,7 @@ def get_pgsqltype_from_mssql(col):
     else:
         ctype = str(col)
 
-    if ctype in ("INTEGER","TINYINT","SMALLINT") :
+    if ctype in ("INTEGER", "TINYINT", "SMALLINT") :
         return "integer"
     elif ctype == "BIGINT":
         return "bigint"
@@ -144,7 +144,7 @@ def get_pgsqltype_from_mssql(col):
     elif ctype[:5] == "NTEXT":
         return "text"
     elif ctype[:6] == "BINARY":
-        #return "bytea({l})".format(l=col.type.length)
+        # return "bytea({l})".format(l=col.type.length)
         return "bytea"
     elif ctype[:9] == "VARBINARY":
         return "bytea"
@@ -156,6 +156,14 @@ def get_pgsqltype_from_mssql(col):
         return "money"
     elif ctype == "UNIQUEIDENTIFIER":
         return "uuid"
+    # MSSQL timestamp data type is not the same as the timestamp data type defined in the SQL-92 standard.
+    # MSSQL timestamp is used typically as a mechanism for version-stamping table rows. The storage size is 8 bytes.
+    # https://technet.microsoft.com/en-us/library/aa260631%28v=sql.80%29.aspx
+    # that's why i convert it to a postgresql bigint
+    # failing to do so using a simple convert without a cast will raise an error :
+    # invalid byte sequence for encoding "UTF8": 0x00
+    elif ctype == "TIMESTAMP":
+        return "bigint"
     else:
         return ctype
 
@@ -203,23 +211,27 @@ def get_select_for_postgresql(ms_engine, mssql_table_name):
     table_list = get_tables_list(ms_engine)
     if mssql_table_name in table_list:
         print("### MSSQL table : {t} found".format(t=mssql_table_name))
-        Table = get_mssql_alchemy_table(ms_engine, mssql_table_name)
+        table = get_mssql_alchemy_table(ms_engine, mssql_table_name)
         sql_query = "SELECT  "
         arr_cols = []
-        for c in Table.columns:
+        for c in table.columns:
             col_name = c.name.lower()
             col_type = get_pgsqltype_from_mssql(c)
             if c.nullable:
                 if col_type == 'text':
                     arr_cols.append(" {name}=COALESCE({src_name},'\\N')".format(name=col_name, src_name=c.name))
+                elif col_type == 'bigint':
+                    arr_cols.append(" {name}=COALESCE(CONVERT(VARCHAR(1000),CAST({src_name} as bigint)),'\\N')".format(name=col_name, src_name=c.name))
                 else:
                     arr_cols.append(
                         " {name}=COALESCE(CONVERT(VARCHAR(1000),{src_name}),'\\N')".format(name=col_name, src_name=c.name))
             else:
                 if col_type == 'text':
                     arr_cols.append(" {name}={src_name}".format(name=col_name, src_name=c.name))
+                elif col_type == 'bigint':
+                    arr_cols.append(" {name}=CONVERT(VARCHAR(1000),CAST({src_name} as bigint))".format(name=col_name, src_name=c.name))
                 else:
-                    arr_cols.append(" {name}=CONVERT(VARCHAR,{src_name})".format(name=col_name, src_name=c.name))
+                    arr_cols.append(" {name}=CONVERT(VARCHAR(1000),{src_name})".format(name=col_name, src_name=c.name))
 
         sql_query += ",".join(arr_cols) + " FROM {t} ".format(t=mssql_table_name.lower())
         return sql_query

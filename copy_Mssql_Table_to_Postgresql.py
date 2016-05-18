@@ -10,7 +10,7 @@ import sqlalchemy_pgsql as pg
 if len(sys.argv) > 1:
     mssql_table_name = sys.argv[1]
 else:
-    mssql_table_name = "Document"
+    mssql_table_name = "Employe"
 
 # using ascii code 31 (unit separator)
 FIELD_DELIMITER = u""+chr(31)
@@ -47,7 +47,7 @@ print("### PGSQL {dst} contains {num} rows BEFORE SYNC #####".format(dst=pgsql_t
 output_file = open(output_filename,mode="w",encoding="utf-8")
 count = 0
 total = 0
-limit = 20000
+limit = 200
 regex = re.compile(r'\\', flags=re.IGNORECASE)
 while 1:
     row = ms_cursor.fetchone()
@@ -94,6 +94,6 @@ copy_cmd = "COPY {table} FROM '{file}' WITH DELIMITER AS e{fs!r} NULL AS '{null}
     fs=FIELD_DELIMITER,
     null="\\N")
 
-# COPY docstorage FROM '/tmp/docstorage.sql' WITH DELIMITER AS e'\x1f' NULL AS '\N';
+# COPY table_name FROM '/tmp/table_name.sql' WITH DELIMITER AS e'\x1f' NULL AS '\N';
 print("### PGSQL you can reload this data in psql with :")
 print(copy_cmd)
