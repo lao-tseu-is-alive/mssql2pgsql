@@ -10,7 +10,7 @@ import sqlalchemy_pgsql as pg
 if len(sys.argv) > 1:
     mssql_table_name = sys.argv[1]
 else:
-    mssql_table_name = "Employe"
+    mssql_table_name = "DocComplement"
 
 # using ascii code 31 (unit separator)
 FIELD_DELIMITER = u""+chr(31)

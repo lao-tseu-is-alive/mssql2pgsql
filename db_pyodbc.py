@@ -3,7 +3,7 @@
 import datetime
 import re
 import pyodbc
-import config_mssql as config
+import config_goeland_mssql as config
 
 __author__ = 'cgil'
 

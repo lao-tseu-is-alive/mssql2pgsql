@@ -7,7 +7,7 @@ import sqlalchemy as sa
 import sqlalchemy.exc
 import sqlalchemy.sql.schema
 import sqlalchemy.engine.reflection
-import config_mssql as config
+import config_goeland_mssql as config
 import urllib
 
 
@@ -191,6 +191,7 @@ def get_postgresql_create_sql(ms_engine, mssql_table_name, pgsql_table_name):
         primary_key = "\n\t CONSTRAINT pk_{t} PRIMARY KEY (".format(t=pgsql_table_name)
         sql_query = "CREATE TABLE {t} (".format(t=mssql_table_name.lower())
         arr_cols = []
+        arr_primary_keys = []
         for c in sa_table.columns:
             col_name = c.name.lower()
             col_type = get_pgsqltype_from_mssql(c)
@@ -198,9 +199,10 @@ def get_postgresql_create_sql(ms_engine, mssql_table_name, pgsql_table_name):
             arr_cols.append("\n\t {name} {type} {isnull}".format(name=col_name,
                                                                 type=col_type,
                                                                 isnull=col_nullable))
-            primary_key += col_name + ' ' if c.primary_key else ''
+            if c.primary_key:
+                arr_primary_keys.append(col_name)
         sql_query += ",".join(arr_cols)
-        sql_query += "," + primary_key + ")\n)"
+        sql_query += "," + primary_key + ",".join(arr_primary_keys)  +")\n)"
         return sql_query
 
     else:
