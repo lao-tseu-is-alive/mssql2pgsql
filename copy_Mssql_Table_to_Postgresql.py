@@ -21,8 +21,9 @@ output_filename = "/tmp/" + pgsql_table_name + ".sql"
 print("##### BEGIN SYNC MSSQL {src} with PGSQL {dst}#####".format(src=mssql_table_name,
                                                                   dst=pgsql_table_name))
 ms_engine = ms.get_engine()
+ms_num_rows_origin = ms.get_count(ms_engine, mssql_table_name)
 print("### MSSQL {src} contains {num} rows #####".format(src=mssql_table_name,
-                                                         num=ms.get_count(ms_engine, mssql_table_name)))
+                                                         num=ms_num_rows_origin))
 sql_query = ms.get_select_for_postgresql(ms_engine, mssql_table_name)
 print("### ABOUT TO RUN SQL QUERY :", sql_query)
 ms_cursor = ms_engine.execute(sql_query)
@@ -44,17 +45,16 @@ else:
 pg_num_rows = pg.get_count(pg_engine, pgsql_table_name)
 print("### PGSQL {dst} contains {num} rows BEFORE SYNC #####".format(dst=pgsql_table_name,
                                                                      num=pg_num_rows))
-output_file = open(output_filename,mode="w",encoding="utf-8")
+output_file = open(output_filename, mode="w", encoding="utf-8")
 count = 0
 total = 0
-limit = 200
+limit = 2000
 regex = re.compile(r'\\', flags=re.IGNORECASE)
 while 1:
     row = ms_cursor.fetchone()
     if not row:
         break
     count += 1
-    # row_line = FIELD_DELIMITER.join(row).decode("ISO-8859-1").encode("UTF-8") + "\n"
     temp_row_array = []
     for field in row:
         if field == '\\N':
@@ -66,7 +66,6 @@ while 1:
             temp_row_array.append(temp_string)
 
     row_line = FIELD_DELIMITER.join(temp_row_array) + "\n"
-    #row_line = FIELD_DELIMITER.join(['\\N' if f == '\\N' else (re.sub(r'\\', r'\\\\', f)) for f in row]) + "\n"
     output_file.write(row_line)
     data.write(row_line)
     if count >= limit:
@@ -82,12 +81,20 @@ while 1:
         else:
             exit("### PGSQL did have problems trying to import this data")
 
-#print(data.getvalue())
+# print(data.getvalue())
 data.seek(0)
 pg.bulk_copy(pg_engine, data, pgsql_table_name, FIELD_DELIMITER)
 output_file.close()
+print("### MSSQL {src} contains {num} rows #####".format(src=mssql_table_name,
+                                                         num=ms_num_rows_origin))
+pg_num_rows_destination = pg.get_count(pg_engine, pgsql_table_name)
 print("### PGSQL {dst} contains {num} rows AFTER SYNC #####".format(dst=pgsql_table_name,
-                                                                    num=pg.get_count(pg_engine, pgsql_table_name)))
+                                                                    num=pg_num_rows_destination))
+if pg_num_rows_destination < ms_num_rows_origin:
+    print("### PGSQL WARNING {dst} missed {num} rows from original data in MSSQL AFTER SYNC #####".format(
+        dst=pgsql_table_name,
+        num=pg_num_rows_destination-ms_num_rows_origin))
+
 copy_cmd = "COPY {table} FROM '{file}' WITH DELIMITER AS e{fs!r} NULL AS '{null}' ".format(
     table=pgsql_table_name,
     file=output_filename,
@@ -96,5 +103,5 @@ copy_cmd = "COPY {table} FROM '{file}' WITH DELIMITER AS e{fs!r} NULL AS '{null}
 
 # COPY table_name FROM '/tmp/table_name.sql' WITH DELIMITER AS e'\x1f' NULL AS '\N';
 print("### PGSQL a copy of the data imported as been saved in {file}".format(file=output_filename))
-print("### PGSQL you can also reload this data inside psql with :")
+print("### PGSQL you can reload this data from inside psql with :")
 print(copy_cmd)

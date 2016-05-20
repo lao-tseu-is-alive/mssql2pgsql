@@ -1,5 +1,6 @@
 import psycopg2
-import config_pgsql as config
+
+from config import config_pgsql as config
 
 
 def pgsql_connect():

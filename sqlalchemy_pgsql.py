@@ -1,11 +1,12 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
-import re
-import sqlalchemy as sa
-import psycopg2
-import sqlalchemy.exc
-import config_pgsql as config
 import urllib
+
+import psycopg2
+import sqlalchemy as sa
+import sqlalchemy.exc
+
+from config import config_pgsql as config
 
 
 def get_engine():

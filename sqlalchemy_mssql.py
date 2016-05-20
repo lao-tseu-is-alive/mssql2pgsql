@@ -1,14 +1,16 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
-import re
 import datetime
 import pyodbc
+import re
+import urllib
+
 import sqlalchemy as sa
+import sqlalchemy.engine.reflection
 import sqlalchemy.exc
 import sqlalchemy.sql.schema
-import sqlalchemy.engine.reflection
-import config_goeland_mssql as config
-import urllib
+
+from config import config_goeland_mssql as config
 
 
 def get_engine():

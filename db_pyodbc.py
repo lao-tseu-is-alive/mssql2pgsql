@@ -1,9 +1,10 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 import datetime
-import re
 import pyodbc
-import config_goeland_mssql as config
+import re
+
+from config import config_goeland_mssql as config
 
 __author__ = 'cgil'
 
