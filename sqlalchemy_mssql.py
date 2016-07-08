@@ -12,6 +12,8 @@ import sqlalchemy.sql.schema
 
 from config import config_goeland_mssql as config
 
+_cached_tables_list = None
+
 
 def get_engine():
     """ will return a valid SqlAlchemy engine"""
@@ -50,6 +52,10 @@ def query_filter(sql):
     sql_clean = sql_clean.replace(';', '')
     sql_clean = sql_clean.replace('--', '')
     return sql_clean
+
+
+def convert_to_snake_case(the_camel_case_string):
+    return re.sub('(?!^)([A-Z]+)', r'_\1', the_camel_case_string).lower()
 
 
 def query(ms_engine, sql, print_header=True, result_format="text"):
@@ -123,6 +129,11 @@ def get_tables_list(ms_engine, ms_schema='dbo'):
     return inspector.get_table_names(schema=ms_schema)
 
 
+def does_table_exist(ms_engine, tablename, ms_schema='dbo'):
+    """ to know if table exist in database """
+    return tablename in get_tables_list(ms_engine, ms_schema)
+
+
 def get_pgsqltype_from_mssql(col):
     if type(col) == sa.sql.schema.Column:
         ctype = str(col.type)
@@ -177,12 +188,15 @@ def get_mssql_alchemy_table(ms_engine, mssql_table_name):
 
 
 def get_count(ms_engine, mssql_table_name):
-    ms_cursor = ms_engine.execute('SELECT COUNT(*) as num FROM ' + mssql_table_name)
-    row = ms_cursor.fetchone()
-    if not row:
-        return None
+    if does_table_exist(ms_engine, mssql_table_name):
+        ms_cursor = ms_engine.execute('SELECT COUNT(*) as num FROM ' + mssql_table_name)
+        row = ms_cursor.fetchone()
+        if not row:
+            return None
+        else:
+            return row.num
     else:
-        return row.num
+        return 0
 
 
 def get_postgresql_create_sql(ms_engine, mssql_table_name, pgsql_table_name):
@@ -191,7 +205,7 @@ def get_postgresql_create_sql(ms_engine, mssql_table_name, pgsql_table_name):
         print("--### Found table : {t} in mssql db ".format(t=mssql_table_name))
         sa_table = get_mssql_alchemy_table(ms_engine, mssql_table_name)
         primary_key = "\n\t CONSTRAINT pk_{t} PRIMARY KEY (".format(t=pgsql_table_name)
-        sql_query = "CREATE TABLE {t} (".format(t=mssql_table_name.lower())
+        sql_query = "CREATE TABLE {t} (".format(t=pgsql_table_name)
         arr_cols = []
         arr_primary_keys = []
         for c in sa_table.columns:
@@ -204,7 +218,10 @@ def get_postgresql_create_sql(ms_engine, mssql_table_name, pgsql_table_name):
             if c.primary_key:
                 arr_primary_keys.append(col_name)
         sql_query += ",".join(arr_cols)
-        sql_query += "," + primary_key + ",".join(arr_primary_keys)  +")\n)"
+        if len(arr_primary_keys) > 0:
+            sql_query += "," + primary_key + ",".join(arr_primary_keys) + ")\n)"
+        else:
+            sql_query += "\n)"
         return sql_query
 
     else:

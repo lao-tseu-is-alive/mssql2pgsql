@@ -78,6 +78,11 @@ def get_tables_list(pg_engine, pg_schema='public'):
     return insp.get_table_names(schema=pg_schema)
 
 
+def does_table_exist(pg_engine, pgsql_table_name, pg_schema='public'):
+    """ to know if table exist in database """
+    return pgsql_table_name in get_tables_list(pg_engine, pg_schema)
+
+
 def get_table(pg_engine, pgsql_table_name, pg_schema='public'):
     meta = sa.MetaData(bind=pg_engine, reflect=False, schema=pg_schema)
     meta.reflect(bind=pg_engine, only=[pgsql_table_name])
@@ -85,16 +90,16 @@ def get_table(pg_engine, pgsql_table_name, pg_schema='public'):
 
 
 def get_count(pg_engine, pgsql_table_name):
-    ms_cursor = pg_engine.execute('SELECT COUNT(*) as num FROM ' + pgsql_table_name)
-    row = ms_cursor.fetchone()
-    if not row:
-        return None
+    """ to get number of records in table """
+    if does_table_exist(pg_engine, pgsql_table_name):
+        ms_cursor = pg_engine.execute('SELECT COUNT(*) as num FROM ' + pgsql_table_name)
+        row = ms_cursor.fetchone()
+        if not row:
+            return None
+        else:
+            return row.num
     else:
-        return row.num
-
-
-def does_table_exist(pg_engine, pgsql_table_name, pg_schema='public'):
-    return pgsql_table_name in get_tables_list(pg_engine, pg_schema)
+        return 0
 
 
 def get_dbserver_encoding(pg_engine):

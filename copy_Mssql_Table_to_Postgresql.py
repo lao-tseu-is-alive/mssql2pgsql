@@ -6,6 +6,9 @@ import sys
 import sqlalchemy_mssql as ms
 import sqlalchemy_pgsql as pg
 
+# with this script you can replicate all tables from mssql database with a bash command like this :
+# time for i in `./list_MSSQL_tables.py`;do ((time ./copy_Mssql_Table_to_Postgresql.py $i) >> R20160708.txt  2>&1);done;
+
 # if we got one parameter assume it's source tablename
 if len(sys.argv) > 1:
     mssql_table_name = sys.argv[1]
@@ -16,7 +19,7 @@ else:
 FIELD_DELIMITER = u""+chr(31)
 # in Postgresql you can choose to keep mixed case characters
 # but be careful you will need to quote the table like this  SELECT * FROM "YourMixedCaseTableName"
-pgsql_table_name = mssql_table_name.lower()
+pgsql_table_name = ms.convert_to_snake_case(mssql_table_name)
 output_filename = "/tmp/" + pgsql_table_name + ".sql"
 print("##### BEGIN SYNC MSSQL {src} with PGSQL {dst}#####".format(src=mssql_table_name,
                                                                   dst=pgsql_table_name))
@@ -40,7 +43,7 @@ if pg.does_table_exist(pg_engine, pgsql_table_name):
         print("### PGSQL  will TRUNCATE {dst} BEFORE SYNC #####".format(dst=pgsql_table_name))
         pg.truncate_table(pg_engine, pgsql_table_name )
 else:
-    sql_create_table = ms.get_postgresql_create_sql(ms_engine,mssql_table_name,pgsql_table_name)
+    sql_create_table = ms.get_postgresql_create_sql(ms_engine, mssql_table_name, pgsql_table_name)
     pg.action_query(pg_engine, sql_create_table)
 pg_num_rows = pg.get_count(pg_engine, pgsql_table_name)
 print("### PGSQL {dst} contains {num} rows BEFORE SYNC #####".format(dst=pgsql_table_name,
@@ -48,7 +51,7 @@ print("### PGSQL {dst} contains {num} rows BEFORE SYNC #####".format(dst=pgsql_t
 output_file = open(output_filename, mode="w", encoding="utf-8")
 count = 0
 total = 0
-limit = 2000
+limit = 20000
 regex = re.compile(r'\\', flags=re.IGNORECASE)
 while 1:
     row = ms_cursor.fetchone()
@@ -71,7 +74,7 @@ while 1:
     if count >= limit:
         total += count
         count = 0
-        print("### PGSQL flushing data at {num} rows #####".format(num=total))
+        print("### PGSQL flushing data to {dst} at {num} rows #####".format(num=total, dst=pgsql_table_name))
         # let's flush content
         data.seek(0)
         if pg.bulk_copy(pg_engine, data, pgsql_table_name, FIELD_DELIMITER):
