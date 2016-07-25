@@ -13,7 +13,7 @@ import sqlalchemy_pgsql as pg
 if len(sys.argv) > 1:
     mssql_table_name = sys.argv[1]
 else:
-    mssql_table_name = "DocComplement"
+    mssql_table_name = "CoFiTmpSALVExport"
 
 # using ascii code 31 (unit separator)
 FIELD_DELIMITER = u""+chr(31)
@@ -28,9 +28,12 @@ ms_num_rows_origin = ms.get_count(ms_engine, mssql_table_name)
 print("### MSSQL {src} contains {num} rows #####".format(src=mssql_table_name,
                                                          num=ms_num_rows_origin))
 sql_query = ms.get_select_for_postgresql(ms_engine, mssql_table_name)
-print("### ABOUT TO RUN SQL QUERY :", sql_query)
+print("### ABOUT TO RUN SQL QUERY :\n", sql_query)
+# print("### BEFORE \n")
+# ms.query(ms_engine, sql_query)
+# print("### NEXT \n")
 ms_cursor = ms_engine.execute(sql_query)
-print("### MGSQL DB SERVER COLLATION : {enc}".format(enc=ms.get_dbserver_collation(ms_engine)))
+print("### MSSQL DB SERVER COLLATION : {enc}".format(enc=ms.get_dbserver_collation(ms_engine)))
 data = StringIO()
 pg_engine = pg.get_engine()
 # TODO if postgres dbserver encoding is not utf-8 do the convert to right encoding

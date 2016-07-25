@@ -7,5 +7,5 @@ engine = pg.get_engine()
 # Listing Tables with SQLALCHEMY
 table_list = pg.get_tables_list(engine)
 for table in table_list:
-    print("{tbl}".format(tbl=table))
-#    print("DROP TABLE {tbl};".format(tbl=table))
+#    print("{tbl}".format(tbl=table))
+     print("DROP TABLE {tbl};".format(tbl=table))

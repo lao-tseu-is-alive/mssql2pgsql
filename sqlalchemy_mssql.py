@@ -19,9 +19,15 @@ def get_engine():
     """ will return a valid SqlAlchemy engine"""
     # need to urlquote password because if your password contains some exotic chars like say @ your dead...
     sqlalchemy_connection = "mssql+pyodbc://" + config.my_user + ":" \
-                            + urllib.parse.quote(config.my_password) + "@" + config.my_dsn
+                            + urllib.parse.quote(config.my_password) \
+                            + "@" + config.my_dsn
+    # + '?charset=utf8'
+    # deprecate_large_types=True may be useful for NVARCHAR('max') in MSSQL > 2012
     return sa.create_engine(sqlalchemy_connection, echo=False,
-                            connect_args={'convert_unicode': True})
+                            connect_args={'convert_unicode': True},
+
+                            legacy_schema_aliasing=False
+                            )
 
 
 def get_cursor(ms_engine):
@@ -54,8 +60,37 @@ def query_filter(sql):
     return sql_clean
 
 
+def standard_table_names(table_name):
+    pure_table_name = table_name.replace("AGF", "Agf")
+    pure_table_name = pure_table_name.replace("EGID", "Egid")
+    pure_table_name = pure_table_name.replace("ARCH", "Arch")
+    pure_table_name = pure_table_name.replace("ASST", "Asst")
+    pure_table_name = pure_table_name.replace("CID", "Cid")
+    pure_table_name = pure_table_name.replace("CIL", "Cil")
+    pure_table_name = pure_table_name.replace("ESTRID", "Estrid")
+    pure_table_name = pure_table_name.replace("ES", "Es")
+    pure_table_name = pure_table_name.replace("GC", "Gc")
+    pure_table_name = pure_table_name.replace("GEO", "Geo")
+    pure_table_name = pure_table_name.replace("CCJP", "CcJp")
+    pure_table_name = pure_table_name.replace("CH", "Ch")
+    pure_table_name = pure_table_name.replace("CN", "Cn")
+    pure_table_name = pure_table_name.replace("RCB", "Rcb")
+    pure_table_name = pure_table_name.replace("DMZ", "Dmz")
+    pure_table_name = pure_table_name.replace("ISO", "Iso")
+    pure_table_name = pure_table_name.replace("NT", "Nt")
+    pure_table_name = pure_table_name.replace("OPC", "Opc")
+    pure_table_name = pure_table_name.replace("POLC", "Polc")
+    pure_table_name = pure_table_name.replace("QSE", "Qse")
+    pure_table_name = pure_table_name.replace("RM", "Rm")
+    pure_table_name = pure_table_name.replace("SAP", "Sap")
+    pure_table_name = pure_table_name.replace("SCC", "Scc")
+    pure_table_name = pure_table_name.replace("SPD", "Spd")
+    pure_table_name = pure_table_name.replace("URB", "Urb")
+    return pure_table_name
+
+
 def convert_to_snake_case(the_camel_case_string):
-    return re.sub('(?!^)([A-Z]+)', r'_\1', the_camel_case_string).lower()
+    return re.sub('(?!^)([A-Z]+)', r'_\1', standard_table_names(the_camel_case_string)).lower()
 
 
 def query(ms_engine, sql, print_header=True, result_format="text"):
@@ -111,6 +146,10 @@ def query(ms_engine, sql, print_header=True, result_format="text"):
             print("## MSSQL ERROR ## inside query() while executing sql \n{0}".format(sql))
             print(e)
             return False
+        except UnicodeDecodeError as e:
+            print("## MSSQL UNICODE ERROR ## inside query() while executing sql \n{0}\n".format(sql))
+            print(e)
+            return False
         finally:
             return True
 
@@ -135,6 +174,9 @@ def does_table_exist(ms_engine, tablename, ms_schema='dbo'):
 
 
 def get_pgsqltype_from_mssql(col):
+    # with MSSQL 2012 there is a bug handling NVARCHAR('max')
+    if type(col.type) == sa.sql.sqltypes.NVARCHAR:
+        return "text"
     if type(col) == sa.sql.schema.Column:
         ctype = str(col.type)
     else:
@@ -240,21 +282,21 @@ def get_select_for_postgresql(ms_engine, mssql_table_name):
             col_type = get_pgsqltype_from_mssql(c)
             if c.nullable:
                 if col_type == 'text':
-                    arr_cols.append(" {name}=COALESCE({src_name},'\\N')".format(name=col_name, src_name=c.name))
+                    arr_cols.append(" [{name}]=COALESCE([{src_name}],'\\N')".format(name=col_name, src_name=c.name))
                 elif col_type == 'bigint':
-                    arr_cols.append(" {name}=COALESCE(CONVERT(VARCHAR(1000),CAST({src_name} as bigint)),'\\N')".format(name=col_name, src_name=c.name))
+                    arr_cols.append(" [{name}]=COALESCE(CONVERT(VARCHAR(1000),CAST([{src_name}] as bigint)),'\\N')".format(name=col_name, src_name=c.name))
                 else:
                     arr_cols.append(
-                        " {name}=COALESCE(CONVERT(VARCHAR(1000),{src_name}),'\\N')".format(name=col_name, src_name=c.name))
+                        " [{name}]=COALESCE(CONVERT(VARCHAR(1000),[{src_name}]),'\\N')".format(name=col_name, src_name=c.name))
             else:
                 if col_type == 'text':
-                    arr_cols.append(" {name}={src_name}".format(name=col_name, src_name=c.name))
+                    arr_cols.append(" [{name}]={src_name}".format(name=col_name, src_name=c.name))
                 elif col_type == 'bigint':
-                    arr_cols.append(" {name}=CONVERT(VARCHAR(1000),CAST({src_name} as bigint))".format(name=col_name, src_name=c.name))
+                    arr_cols.append(" [{name}]=CONVERT(VARCHAR(1000),CAST([{src_name}] as bigint))".format(name=col_name, src_name=c.name))
                 else:
-                    arr_cols.append(" {name}=CONVERT(VARCHAR(1000),{src_name})".format(name=col_name, src_name=c.name))
+                    arr_cols.append(" [{name}]=CONVERT(VARCHAR(1000),[{src_name}])".format(name=col_name, src_name=c.name))
 
-        sql_query += ",".join(arr_cols) + " FROM {t} ".format(t=mssql_table_name.lower())
+        sql_query += ",".join(arr_cols) + " FROM {t} ".format(t=mssql_table_name)
         return sql_query
     else:
         print("### ERROR table : {t} NOT FOUND in mssql db ".format(t=mssql_table_name))

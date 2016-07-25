@@ -33,7 +33,7 @@ def bulk_copy(pg_engine, data, pgsql_table_name, field_separator):
         cursor.close()
         connection.commit()
         return True
-    except (sa.exc.SQLAlchemyError, sa.exc.DBAPIError, psycopg2.DataError ) as e:
+    except (sa.exc.SQLAlchemyError, sa.exc.DBAPIError, psycopg2.DataError) as e:
         print("## ERROR PGSQL bulk_copy ")
         print(data.getvalue())
         print("## ERROR PGSQL bulk_copy for table : {table}".format(table=pgsql_table_name))
