@@ -1,5 +1,8 @@
-#!/usr/bin/env python
-from __future__ import print_function
+#!/usr/bin/env python3
+import sys
+import os
+base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, base_dir)
 from sqlalchemy_mssql import *
 import sys
 

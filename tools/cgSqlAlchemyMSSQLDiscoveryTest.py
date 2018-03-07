@@ -1,5 +1,8 @@
 #!/usr/bin/python3
-from __future__ import print_function
+import sys
+import os
+base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, base_dir)
 import db_pyodbc as db
 import sqlalchemy_mssql as ms
 # testing connection to GOELAND MSSQL DB with pyodbc and SqlAlchemy
@@ -23,5 +26,5 @@ while 1:
     print('[', row.IdDocument, ']', row.DocTitle)
 print("### Listing Tables with SQLALCHEMY       ###")
 table_list = ms.get_tables_list(engine)
-for table in table_list:
-    print(table)
+#for table in table_list:
+#    print(table)

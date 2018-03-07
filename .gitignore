@@ -134,3 +134,7 @@ ENV/
 # Rope project settings
 .ropeproject
 # Created by .ignore support plugin (hsz.mobi)
+
+config/config_goeland_mssql.py
+*.txt
+.idea/

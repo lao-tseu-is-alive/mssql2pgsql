@@ -182,7 +182,7 @@ def get_pgsqltype_from_mssql(col):
     else:
         ctype = str(col)
 
-    if ctype in ("INTEGER", "TINYINT", "SMALLINT") :
+    if ctype in ("INTEGER", "TINYINT", "SMALLINT"):
         return "integer"
     elif ctype == "BIGINT":
         return "bigint"
@@ -223,15 +223,108 @@ def get_pgsqltype_from_mssql(col):
         return ctype
 
 
+def get_flask_restful_type_from_mssql(col, public_column_name=None):
+    if col.nullable:
+        null_value = ", default= None"
+    else:
+        null_value = ""
+
+    if public_column_name is None:
+        prefix = "'{col_name}' : ".format(col_name=convert_to_snake_case(col.name))
+    else:
+        prefix = "'{col_name}' : ".format(col_name=public_column_name)
+
+    suffix = "attribute='{private_name}'{null})".format(private_name=col.name, null=null_value)
+
+    if type(col.type) == sa.sql.sqltypes.NVARCHAR:
+        return "{prefix} fields.String({suffix}".format(prefix=prefix, suffix=suffix)
+    if type(col) == sa.sql.schema.Column:
+        ctype = str(col.type).upper()
+    else:
+        ctype = str(col).upper()
+
+    if ctype in ("INTEGER", "TINYINT", "SMALLINT", "BIGINT"):
+        return "{prefix} fields.Integer({suffix}".format(prefix=prefix, suffix=suffix)
+    if ctype in ("REAL", "FLOAT"):
+        return "{prefix} fields.Float({suffix}".format(prefix=prefix, suffix=suffix)
+    if ctype in ("SMALLMONEY", "MONEY",):
+        return "{prefix} fields.Float({suffix}".format(prefix=prefix, suffix=suffix)
+    elif ctype == "BIT":
+        return "{prefix} fields.Boolean({suffix}".format(prefix=prefix, suffix=suffix)
+    elif ctype[:7] == "VARCHAR":
+        return "{prefix} fields.String({suffix}".format(prefix=prefix, suffix=suffix)
+    elif ctype[:8] == "NVARCHAR":
+        return "{prefix} fields.String({suffix}".format(prefix=prefix, suffix=suffix)
+    elif ctype[:5] == "NCHAR":
+        return "{prefix} fields.String({suffix}".format(prefix=prefix, suffix=suffix)
+    elif ctype[:4] == "TEXT":
+        return "{prefix} fields.String({suffix}".format(prefix=prefix, suffix=suffix)
+    elif ctype[:5] == "NTEXT":
+        return "{prefix} fields.String({suffix}".format(prefix=prefix, suffix=suffix)
+    elif ctype[:6] == "BINARY":  # should be converted in hex
+        return "{prefix} fields.String({suffix}".format(prefix=prefix, suffix=suffix)
+    elif ctype[:9] == "VARBINARY":
+        return "{prefix} fields.String({suffix}".format(prefix=prefix, suffix=suffix)
+    elif ctype[:4] == "CHAR":
+        return "{prefix} fields.String({suffix}".format(prefix=prefix, suffix=suffix)
+    elif ctype in ("SMALLDATETIME", "DATETIME"):
+        return "{prefix} fields.DateTime(dt_format='iso8601',{suffix}".format(prefix=prefix, suffix=suffix)
+    elif ctype[:7] in ("DECIMAL", "NUMERIC"):
+        # return "{prefix} fields.Fixed(decimals={decim},
+        # {suffix}".format(decim=col.type.precision, prefix=prefix, suffix=suffix)
+        return "{prefix} fields.Arbitrary({suffix}".format(prefix=prefix, suffix=suffix)
+    elif ctype == "UNIQUEIDENTIFIER":
+        return "uuid"
+    elif ctype == "TIMESTAMP":
+        return "{prefix} fields.Integer({suffix}".format(prefix=prefix, suffix=suffix)
+    else:
+        return "{prefix} fields.Raw({suffix}".format(prefix=prefix, suffix=suffix)
+
+
+def get_flask_restful_definition_from_mssql(ms_engine, mssql_table_name, table_name):
+    """
+    get the flask_restful fields from table see: http://flask-restful-cn.readthedocs.io/en/0.3.5/fields.html
+    :param ms_engine:
+    :param mssql_table_name:
+    :param table_name:
+    :return: a string with the fields resources declaration
+    """
+
+    table_list = get_tables_list(ms_engine)
+    if mssql_table_name in table_list:
+        print("--### Found table : {t} in mssql db ".format(t=mssql_table_name))
+        sa_table = get_mssql_alchemy_table(ms_engine, mssql_table_name)
+        sql_query = "resource_{t}_fields = {{".format(t=table_name)
+        arr_cols = []
+        for c in sa_table.columns:
+            col_name = c.name.lower()
+            if c.primary_key:
+                col_type = get_flask_restful_type_from_mssql(c, 'id')
+            else:
+                col_type = get_flask_restful_type_from_mssql(c)
+
+            arr_cols.append("\n\t{type}".format(type=col_type))
+
+        sql_query += ",".join(arr_cols)
+        sql_query += "\n}"
+        return sql_query
+
+    else:
+        print("### ERROR table : {t} NOT FOUND in mssql db ".format(t=mssql_table_name))
+
+
 def get_mssql_alchemy_table(ms_engine, mssql_table_name):
     meta = sa.MetaData(bind=ms_engine, reflect=False, schema='dbo')
     meta.reflect(bind=ms_engine, only=[mssql_table_name])
     return sa.Table(mssql_table_name, meta, autoLoad=True)
 
 
-def get_count(ms_engine, mssql_table_name):
+def get_count(ms_engine, mssql_table_name, mssql_where_condition = ''):
     if does_table_exist(ms_engine, mssql_table_name):
-        ms_cursor = ms_engine.execute('SELECT COUNT(*) as num FROM ' + mssql_table_name)
+        sql_query = 'SELECT COUNT(*) as num FROM ' + mssql_table_name
+        if len(mssql_where_condition.strip()) > 3:
+            sql_query += " WHERE {condition}".format(condition=mssql_where_condition)
+        ms_cursor = ms_engine.execute(sql_query)
         row = ms_cursor.fetchone()
         if not row:
             return None
@@ -244,7 +337,7 @@ def get_count(ms_engine, mssql_table_name):
 def get_postgresql_create_sql(ms_engine, mssql_table_name, pgsql_table_name):
     table_list = get_tables_list(ms_engine)
     if mssql_table_name in table_list:
-        print("--### Found table : {t} in mssql db ".format(t=mssql_table_name))
+        print("### MSSQL found table : {t} in mssql db, will build CREATE 4 postgresql ".format(t=mssql_table_name))
         sa_table = get_mssql_alchemy_table(ms_engine, mssql_table_name)
         primary_key = "\n\t CONSTRAINT pk_{t} PRIMARY KEY (".format(t=pgsql_table_name)
         sql_query = "CREATE TABLE {t} (".format(t=pgsql_table_name)
@@ -255,8 +348,8 @@ def get_postgresql_create_sql(ms_engine, mssql_table_name, pgsql_table_name):
             col_type = get_pgsqltype_from_mssql(c)
             col_nullable = '' if c.nullable else 'NOT NULL'
             arr_cols.append("\n\t {name} {type} {isnull}".format(name=col_name,
-                                                                type=col_type,
-                                                                isnull=col_nullable))
+                                                                 type=col_type,
+                                                                 isnull=col_nullable))
             if c.primary_key:
                 arr_primary_keys.append(col_name)
         sql_query += ",".join(arr_cols)
@@ -270,7 +363,7 @@ def get_postgresql_create_sql(ms_engine, mssql_table_name, pgsql_table_name):
         print("### ERROR table : {t} NOT FOUND in mssql db ".format(t=mssql_table_name))
 
 
-def get_select_for_postgresql(ms_engine, mssql_table_name):
+def get_select_for_postgresql(ms_engine, mssql_table_name, mssql_where_condition = ''):
     table_list = get_tables_list(ms_engine)
     if mssql_table_name in table_list:
         print("### MSSQL table : {t} found".format(t=mssql_table_name))
@@ -284,19 +377,27 @@ def get_select_for_postgresql(ms_engine, mssql_table_name):
                 if col_type == 'text':
                     arr_cols.append(" [{name}]=COALESCE([{src_name}],'\\N')".format(name=col_name, src_name=c.name))
                 elif col_type == 'bigint':
-                    arr_cols.append(" [{name}]=COALESCE(CONVERT(VARCHAR(1000),CAST([{src_name}] as bigint)),'\\N')".format(name=col_name, src_name=c.name))
+                    arr_cols.append(
+                        " [{name}]=COALESCE(CONVERT(VARCHAR(1000),CAST([{src_name}] as bigint)),'\\N')".format(
+                            name=col_name, src_name=c.name))
                 else:
                     arr_cols.append(
-                        " [{name}]=COALESCE(CONVERT(VARCHAR(1000),[{src_name}]),'\\N')".format(name=col_name, src_name=c.name))
+                        " [{name}]=COALESCE(CONVERT(VARCHAR(1000),[{src_name}]),'\\N')".format(name=col_name,
+                                                                                               src_name=c.name))
             else:
                 if col_type == 'text':
                     arr_cols.append(" [{name}]={src_name}".format(name=col_name, src_name=c.name))
                 elif col_type == 'bigint':
-                    arr_cols.append(" [{name}]=CONVERT(VARCHAR(1000),CAST([{src_name}] as bigint))".format(name=col_name, src_name=c.name))
+                    arr_cols.append(
+                        " [{name}]=CONVERT(VARCHAR(1000),CAST([{src_name}] as bigint))".format(name=col_name,
+                                                                                               src_name=c.name))
                 else:
-                    arr_cols.append(" [{name}]=CONVERT(VARCHAR(1000),[{src_name}])".format(name=col_name, src_name=c.name))
+                    arr_cols.append(
+                        " [{name}]=CONVERT(VARCHAR(1000),[{src_name}])".format(name=col_name, src_name=c.name))
 
         sql_query += ",".join(arr_cols) + " FROM {t} ".format(t=mssql_table_name)
+        if len(mssql_where_condition.strip()) > 3:
+            sql_query += " WHERE {condition}".format(condition=mssql_where_condition)
         return sql_query
     else:
         print("### ERROR table : {t} NOT FOUND in mssql db ".format(t=mssql_table_name))
