@@ -314,7 +314,7 @@ def get_flask_restful_definition_from_mssql(ms_engine, mssql_table_name, table_n
 
 
 def get_mssql_alchemy_table(ms_engine, mssql_table_name):
-    meta = sa.MetaData(bind=ms_engine, reflect=False, schema='dbo')
+    meta = sa.MetaData(bind=ms_engine, schema='dbo')
     meta.reflect(bind=ms_engine, only=[mssql_table_name])
     return sa.Table(mssql_table_name, meta, autoLoad=True)
 
