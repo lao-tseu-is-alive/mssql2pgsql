@@ -10,11 +10,11 @@ NUM_ROWS_IN_BUFFER = 20000
 # with this script you can replicate all tables from mssql database with a bash command like this :
 # time for i in `./list_MSSQL_tables.py`;do ((time ./copy_Mssql_Table_to_Postgresql.py $i) >> R20160708.txt  2>&1);done;
 
-# if we got one parameter assume it's source tablename
+# if we got one parameter assume its source table name
 if len(sys.argv) > 1:
     mssql_table_name = sys.argv[1]
 else:
-    mssql_table_name = "CoFiTmpSALVExport"
+    mssql_table_name = "DicoCPRueLS"
 
 # using ascii code 31 (unit separator)
 FIELD_DELIMITER = u""+chr(31)
@@ -37,7 +37,6 @@ ms_cursor = ms_engine.execute(sql_query)
 print("### MSSQL DB SERVER COLLATION : {enc}".format(enc=ms.get_dbserver_collation(ms_engine)))
 data = StringIO()
 pg_engine = pg.get_engine()
-# TODO if postgres dbserver encoding is not utf-8 do the convert to right encoding
 print("### PGSQL DB SERVER ENCODING : {enc}".format(enc=pg.get_dbserver_encoding(pg_engine)))
 print("### PGSQL DB CLIENT ENCODING : {enc}".format(enc=pg.get_dbclient_encoding(pg_engine)))
 pg_num_rows = 0

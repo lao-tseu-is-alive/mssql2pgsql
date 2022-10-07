@@ -175,14 +175,14 @@ def does_table_exist(ms_engine, tablename, ms_schema='dbo'):
 
 def get_pgsqltype_from_mssql(col):
     # with MSSQL 2012 there is a bug handling NVARCHAR('max')
-    if type(col.type) == sa.sql.sqltypes.NVARCHAR:
+    if type(col['type']) == sa.sql.sqltypes.NVARCHAR:
         return "text"
     if type(col) == sa.sql.schema.Column:
-        ctype = str(col.type)
+        ctype = str(col['type'])
     else:
-        ctype = str(col)
+        ctype = str(col['type'])
 
-    if ctype in ("INTEGER", "TINYINT", "SMALLINT"):
+    if ctype in ("INTEGER", "TINYINT", "SMALLINT", "INTEGER()"):
         return "integer"
     elif ctype == "BIGINT":
         return "bigint"
@@ -338,19 +338,22 @@ def get_postgresql_create_sql(ms_engine, mssql_table_name, pgsql_table_name):
     table_list = get_tables_list(ms_engine)
     if mssql_table_name in table_list:
         print("### MSSQL found table : {t} in mssql db, will build CREATE 4 postgresql ".format(t=mssql_table_name))
-        sa_table = get_mssql_alchemy_table(ms_engine, mssql_table_name)
+        # sa_table = get_mssql_alchemy_table(ms_engine, mssql_table_name)
+        inspectTool = sa.inspect(ms_engine)
+        tableColumns = inspectTool.get_columns(mssql_table_name)
+        arrPrimaryKeysColumns = inspectTool.get_pk_constraint(mssql_table_name)['constrained_columns']
         primary_key = "\n\t CONSTRAINT pk_{t} PRIMARY KEY (".format(t=pgsql_table_name)
         sql_query = "CREATE TABLE {t} (".format(t=pgsql_table_name)
         arr_cols = []
         arr_primary_keys = []
-        for c in sa_table.columns:
-            col_name = c.name.lower()
+        for c in tableColumns:
+            col_name = c['name'].lower()
             col_type = get_pgsqltype_from_mssql(c)
-            col_nullable = '' if c.nullable else 'NOT NULL'
+            col_nullable = '' if c['nullable'] else 'NOT NULL'
             arr_cols.append("\n\t {name} {type} {isnull}".format(name=col_name,
                                                                  type=col_type,
                                                                  isnull=col_nullable))
-            if c.primary_key:
+            if c['name'] in arrPrimaryKeysColumns:
                 arr_primary_keys.append(col_name)
         sql_query += ",".join(arr_cols)
         if len(arr_primary_keys) > 0:
@@ -367,33 +370,35 @@ def get_select_for_postgresql(ms_engine, mssql_table_name, mssql_where_condition
     table_list = get_tables_list(ms_engine)
     if mssql_table_name in table_list:
         print("### MSSQL table : {t} found".format(t=mssql_table_name))
-        table = get_mssql_alchemy_table(ms_engine, mssql_table_name)
+        # table = get_mssql_alchemy_table(ms_engine, mssql_table_name)
+        inspectTool = sa.inspect(ms_engine)
+        tableColumns = inspectTool.get_columns(mssql_table_name)
         sql_query = "SELECT  "
         arr_cols = []
-        for c in table.columns:
-            col_name = c.name.lower()
+        for c in tableColumns:
+            col_name = c['name'].lower()
             col_type = get_pgsqltype_from_mssql(c)
-            if c.nullable:
+            if c['nullable']:
                 if col_type == 'text':
-                    arr_cols.append(" [{name}]=COALESCE([{src_name}],'\\N')".format(name=col_name, src_name=c.name))
+                    arr_cols.append(" [{name}]=COALESCE([{src_name}],'\\N')".format(name=col_name, src_name=c['name']))
                 elif col_type == 'bigint':
                     arr_cols.append(
                         " [{name}]=COALESCE(CONVERT(VARCHAR(1000),CAST([{src_name}] as bigint)),'\\N')".format(
-                            name=col_name, src_name=c.name))
+                            name=col_name, src_name=c['name']))
                 else:
                     arr_cols.append(
                         " [{name}]=COALESCE(CONVERT(VARCHAR(1000),[{src_name}]),'\\N')".format(name=col_name,
-                                                                                               src_name=c.name))
+                                                                                               src_name=c['name']))
             else:
                 if col_type == 'text':
-                    arr_cols.append(" [{name}]={src_name}".format(name=col_name, src_name=c.name))
+                    arr_cols.append(" [{name}]={src_name}".format(name=col_name, src_name=c['name']))
                 elif col_type == 'bigint':
                     arr_cols.append(
                         " [{name}]=CONVERT(VARCHAR(1000),CAST([{src_name}] as bigint))".format(name=col_name,
-                                                                                               src_name=c.name))
+                                                                                               src_name=c['name']))
                 else:
                     arr_cols.append(
-                        " [{name}]=CONVERT(VARCHAR(1000),[{src_name}])".format(name=col_name, src_name=c.name))
+                        " [{name}]=CONVERT(VARCHAR(1000),[{src_name}])".format(name=col_name, src_name=c['name']))
 
         sql_query += ",".join(arr_cols) + " FROM {t} ".format(t=mssql_table_name)
         if len(mssql_where_condition.strip()) > 3:
