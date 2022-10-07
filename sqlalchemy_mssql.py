@@ -204,7 +204,11 @@ def get_pgsqltype_from_mssql(col):
     elif ctype[:9] == "VARBINARY":
         return "bytea"
     elif ctype[:4] == "CHAR":
-        return "char({l})".format(l=col.type.length)
+        m = re.match("CHAR\((\d+)\)", ctype)
+        char_length = 5
+        if m:
+            char_length = m.group(1)
+        return "char({l})".format(l=char_length)
     elif ctype in ("SMALLDATETIME", "DATETIME"):
         return "timestamp"
     elif ctype in ("SMALLMONEY", "MONEY"):

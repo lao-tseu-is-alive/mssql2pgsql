@@ -14,7 +14,7 @@ NUM_ROWS_IN_BUFFER = 20000
 if len(sys.argv) > 1:
     mssql_table_name = sys.argv[1]
 else:
-    mssql_table_name = "DicoCPRueLS"
+    mssql_table_name = "ThiArbre"
 
 # using ascii code 31 (unit separator)
 FIELD_DELIMITER = u""+chr(31)
