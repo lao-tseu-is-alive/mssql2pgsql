@@ -212,7 +212,7 @@ def get_pgsqltype_from_mssql(col):
     elif ctype in ("SMALLDATETIME", "DATETIME"):
         return "timestamp"
     elif ctype in ("SMALLMONEY", "MONEY"):
-        return "money"
+        return "decimal(20, 4)"
     elif ctype == "UNIQUEIDENTIFIER":
         return "uuid"
     # MSSQL timestamp data type is not the same as the timestamp data type defined in the SQL-92 standard.
@@ -389,6 +389,10 @@ def get_select_for_postgresql(ms_engine, mssql_table_name, mssql_where_condition
                     arr_cols.append(
                         " [{name}]=COALESCE(CONVERT(VARCHAR(1000),CAST([{src_name}] as bigint)),'\\N')".format(
                             name=col_name, src_name=c['name']))
+                elif col_type == 'timestamp':
+                    arr_cols.append(
+                        " [{name}]=COALESCE(CONVERT(VARCHAR(1000),[{src_name}],21),'\\N')".format(name=col_name,
+                                                                                               src_name=c['name']))
                 else:
                     arr_cols.append(
                         " [{name}]=COALESCE(CONVERT(VARCHAR(1000),[{src_name}]),'\\N')".format(name=col_name,
@@ -400,6 +404,9 @@ def get_select_for_postgresql(ms_engine, mssql_table_name, mssql_where_condition
                     arr_cols.append(
                         " [{name}]=CONVERT(VARCHAR(1000),CAST([{src_name}] as bigint))".format(name=col_name,
                                                                                                src_name=c['name']))
+                elif col_type == 'timestamp':
+                    arr_cols.append(
+                        " [{name}]=CONVERT(VARCHAR(1000),[{src_name}], 21)".format(name=col_name, src_name=c['name']))
                 else:
                     arr_cols.append(
                         " [{name}]=CONVERT(VARCHAR(1000),[{src_name}])".format(name=col_name, src_name=c['name']))
@@ -410,6 +417,7 @@ def get_select_for_postgresql(ms_engine, mssql_table_name, mssql_where_condition
         return sql_query
     else:
         print("### ERROR table : {t} NOT FOUND in mssql db ".format(t=mssql_table_name))
+        exit(1)
 
 
 def get_dbserver_collation(ms_engine):

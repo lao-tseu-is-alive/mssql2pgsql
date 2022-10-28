@@ -14,7 +14,7 @@ NUM_ROWS_IN_BUFFER = 20000
 if len(sys.argv) > 1:
     mssql_table_name = sys.argv[1]
 else:
-    mssql_table_name = "ThiArbre"
+    mssql_table_name = "ThingStory"
 
 # using ascii code 31 (unit separator)
 FIELD_DELIMITER = u""+chr(31)
@@ -25,6 +25,10 @@ output_filename = "/tmp/" + pgsql_table_name + ".sql"
 print("##### BEGIN SYNC MSSQL {src} with PGSQL {dst}#####".format(src=mssql_table_name,
                                                                   dst=pgsql_table_name))
 ms_engine = ms.get_engine()
+table_list = ms.get_tables_list(ms_engine)
+if mssql_table_name not in table_list:
+    print("### ERROR : table {t} was not found in mssql database ".format(t=mssql_table_name))
+    exit(1)
 ms_num_rows_origin = ms.get_count(ms_engine, mssql_table_name)
 print("### MSSQL {src} contains {num} rows #####".format(src=mssql_table_name,
                                                          num=ms_num_rows_origin))
