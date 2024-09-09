@@ -1,14 +1,15 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 import datetime
-import pyodbc
 import re
-import urllib
+from urllib.parse import quote
 
+import pyodbc
 import sqlalchemy as sa
-import sqlalchemy.engine.reflection
 import sqlalchemy.exc
 import sqlalchemy.sql.schema
+from sqlalchemy import text
+from sqlalchemy.sql import sqltypes
 
 from config import config_goeland_mssql as config
 
@@ -19,7 +20,7 @@ def get_engine():
     """ will return a valid SqlAlchemy engine"""
     # need to urlquote password because if your password contains some exotic chars like say @ your dead...
     sqlalchemy_connection = "mssql+pyodbc://" + config.my_user + ":" \
-                            + urllib.parse.quote(config.my_password) \
+                            + quote(config.my_password) \
                             + "@" + config.my_dsn
     # + '?charset=utf8'
     # deprecate_large_types=True may be useful for NVARCHAR('max') in MSSQL > 2012
@@ -30,23 +31,22 @@ def get_engine():
                             )
 
 
-def get_cursor(ms_engine):
+def get_cursor(alchemy_engine):
     """ to get a DB-API cursor but don't forget to close() to release it to pool"""
-    return ms_engine.raw_connection().cursor()
+    return alchemy_engine.raw_connection().cursor()
 
 
-def action_query(ms_engine, action_query):
+def action_query(alchemy_engine, ddl_query):
     """ to run a one shot query like a TRUNCATE a CREATE or whatever query that does not return a recordset"""
     # http://docs.sqlalchemy.org/en/rel_1_0/core/connections.html#understanding-autocommit
-    connection = ms_engine.connect()
-    try:
-        connection.execute(sa.sql.expression.text(action_query).execution_options(autocommit=True))
-    except sa.exc.SQLAlchemyError as e:
-        print("## ERROR PGSQL action_query ")
-        print("Action query was : {sql}".format(sql=action_query))
-        print(e)
-    finally:
-        connection.close()
+    with alchemy_engine.connect() as connection:
+        with connection.begin():
+            try:
+                connection.execute(text(ddl_query))
+            except sa.exc.SQLAlchemyError as e:
+                print("## ERROR MSSQL query ")
+                print("Action query was : {sql}".format(sql=ddl_query))
+                print(e)
 
 
 def query_filter(sql):
@@ -93,55 +93,56 @@ def convert_to_snake_case(the_camel_case_string):
     return re.sub('(?!^)([A-Z]+)', r'_\1', standard_table_names(the_camel_case_string)).lower()
 
 
-def query(ms_engine, sql, print_header=True, result_format="text"):
+def query(alchemy_engine, sql, print_header=True, result_format="text"):
     """
     will execute the sql query against the database defined in config and print the result to standard output
+    :param alchemy_engine: a valid sqlalchemy engine
     :param sql: string with sql query, internally will clean any by removing -- ;INSERT,UPDATE,DROP etc..
     :param print_header: boolean (default True) defining if you want column name header displayed
     :param result_format: string (default text) defining the format of output actually only text is supported
     :return: boolean False if something went wrong
     """
     field_max_width = 80
-    my_cursor = get_cursor(ms_engine)
-    if my_cursor:
+    cursor = get_cursor(alchemy_engine)
+    if cursor:
         try:
             print("## MSSQL query :{0}".format(query_filter(sql)))
-            my_cursor.execute(query_filter(sql))
-            row = my_cursor.fetchone()
-            if row:
+            cursor.execute(query_filter(sql))
+            record = cursor.fetchone()
+            if record:
                 if print_header:
                     header = ""
-                    for field_name, field_type, bof0, field_width, larg2, bof1, bof2 in row.cursor_description:
+                    for field_name, field_type, bof0, field_width, larg2, bof1, bof2 in record.cursor_description:
                         if field_width > field_max_width:
                             field_width = field_max_width
                         if result_format == "text":
                             header += "[{0: ^{field_width}}]".format(field_name, field_width=field_width)
                     print(header)
             while 1:
-                if not row:
+                if not record:
                     break
                 if result_format == "text":
                     row_result = ""
-                    for i in range(0, len(row)):
-                        field_width = row.cursor_description[i][3]
+                    for i in range(0, len(record)):
+                        field_width = record.cursor_description[i][3]
                         if field_width > field_max_width:
                             field_width = field_max_width
-                        if row[i] is None:
+                        if record[i] is None:
                             row_result += "[ NULL ]"
                         else:
-                            if type(row[i]) is datetime.datetime:
-                                field_string = '[  {0:%Y-%m-%d %H:%M:%S}  ]'.format(row[i], field_width=field_width)
+                            if type(record[i]) is datetime.datetime:
+                                field_string = '[  {0:%Y-%m-%d %H:%M:%S}  ]'.format(record[i], field_width=field_width)
                             else:
-                                if len(str(row[i])) > field_max_width:
-                                    field_value = str(row[i])[0:(field_max_width - 3)] + "..."
+                                if len(str(record[i])) > field_max_width:
+                                    field_value = str(record[i])[0:(field_max_width - 3)] + "..."
                                 else:
-                                    field_value = str(row[i])
+                                    field_value = str(record[i])
                                 field_string = "[{0: ^{field_width}}]".format(field_value, field_width=field_width)
                             row_result += field_string
 
                     print(row_result)
 
-                row = my_cursor.fetchone()
+                record = cursor.fetchone()
         except pyodbc.ProgrammingError as e:
             print("## MSSQL ERROR ## inside query() while executing sql \n{0}".format(sql))
             print(e)
@@ -154,7 +155,7 @@ def query(ms_engine, sql, print_header=True, result_format="text"):
             return True
 
 
-def get_tables_list(ms_engine, ms_schema='dbo'):
+def get_tables_list(alchemy_engine, ms_schema='dbo'):
     """ to get the list of existing tables in a specific schema or in the default schema """
 
     # next line is VERY VERY long to run it loads all tables definition with FK etc...
@@ -164,20 +165,20 @@ def get_tables_list(ms_engine, ms_schema='dbo'):
     #    print(table.name, table.columns)
     # insp = sa.engine.reflection.Inspector.from_engine(engine)
 
-    inspector = sa.engine.reflection.Inspector.from_engine(ms_engine)
+    inspector = sa.engine.reflection.Inspector.from_engine(alchemy_engine)
     return inspector.get_table_names(schema=ms_schema)
 
 
-def does_table_exist(ms_engine, tablename, ms_schema='dbo'):
+def does_table_exist(alchemy_engine, tablename, ms_schema='dbo'):
     """ to know if table exist in database """
-    return tablename in get_tables_list(ms_engine, ms_schema)
+    return tablename in get_tables_list(alchemy_engine, ms_schema)
 
 
 def get_pgsqltype_from_mssql(col):
     # with MSSQL 2012 there is a bug handling NVARCHAR('max')
-    if type(col['type']) == sa.sql.sqltypes.NVARCHAR:
+    if type(col['type']) is sa.sql.sqltypes.NVARCHAR:
         return "text"
-    if type(col) == sa.sql.schema.Column:
+    if type(col) is sa.sql.schema.Column:
         ctype = str(col['type'])
     else:
         ctype = str(col['type'])
@@ -204,7 +205,7 @@ def get_pgsqltype_from_mssql(col):
     elif ctype[:9] == "VARBINARY":
         return "bytea"
     elif ctype[:4] == "CHAR":
-        m = re.match("CHAR\((\d+)\)", ctype)
+        m = re.match(r"CHAR\((\d+)\)", ctype)
         char_length = 5
         if m:
             char_length = m.group(1)
@@ -240,9 +241,9 @@ def get_flask_restful_type_from_mssql(col, public_column_name=None):
 
     suffix = "attribute='{private_name}'{null})".format(private_name=col.name, null=null_value)
 
-    if type(col.type) == sa.sql.sqltypes.NVARCHAR:
+    if type(col.type) is sa.sql.sqltypes.NVARCHAR:
         return "{prefix} fields.String({suffix}".format(prefix=prefix, suffix=suffix)
-    if type(col) == sa.sql.schema.Column:
+    if type(col) is sa.sql.schema.Column:
         ctype = str(col.type).upper()
     else:
         ctype = str(col).upper()
@@ -285,79 +286,42 @@ def get_flask_restful_type_from_mssql(col, public_column_name=None):
         return "{prefix} fields.Raw({suffix}".format(prefix=prefix, suffix=suffix)
 
 
-def get_flask_restful_definition_from_mssql(ms_engine, mssql_table_name, table_name):
-    """
-    get the flask_restful fields from table see: http://flask-restful-cn.readthedocs.io/en/0.3.5/fields.html
-    :param ms_engine:
-    :param mssql_table_name:
-    :param table_name:
-    :return: a string with the fields resources declaration
-    """
-
-    table_list = get_tables_list(ms_engine)
-    if mssql_table_name in table_list:
-        print("--### Found table : {t} in mssql db ".format(t=mssql_table_name))
-        sa_table = get_mssql_alchemy_table(ms_engine, mssql_table_name)
-        sql_query = "resource_{t}_fields = {{".format(t=table_name)
-        arr_cols = []
-        for c in sa_table.columns:
-            col_name = c.name.lower()
-            if c.primary_key:
-                col_type = get_flask_restful_type_from_mssql(c, 'id')
-            else:
-                col_type = get_flask_restful_type_from_mssql(c)
-
-            arr_cols.append("\n\t{type}".format(type=col_type))
-
-        sql_query += ",".join(arr_cols)
-        sql_query += "\n}"
-        return sql_query
-
-    else:
-        print("### ERROR table : {t} NOT FOUND in mssql db ".format(t=mssql_table_name))
-
-
-def get_mssql_alchemy_table(ms_engine, mssql_table_name):
-    meta = sa.MetaData(bind=ms_engine, schema='dbo')
-    meta.reflect(bind=ms_engine, only=[mssql_table_name])
-    return sa.Table(mssql_table_name, meta, autoLoad=True)
-
-
-def get_count(ms_engine, mssql_table_name, mssql_where_condition = ''):
-    if does_table_exist(ms_engine, mssql_table_name):
+def get_count(alchemy_engine, mssql_table_name, mssql_where_condition=''):
+    if does_table_exist(alchemy_engine, mssql_table_name):
         sql_query = 'SELECT COUNT(*) as num FROM ' + mssql_table_name
         if len(mssql_where_condition.strip()) > 3:
             sql_query += " WHERE {condition}".format(condition=mssql_where_condition)
-        ms_cursor = ms_engine.execute(sql_query)
-        row = ms_cursor.fetchone()
-        if not row:
-            return None
-        else:
-            return row.num
+        with alchemy_engine.connect() as ms_connection:
+            ms_cursor = ms_connection.execute(text(sql_query))
+            my_record = ms_cursor.fetchone()
+            if not my_record:
+                return None
+            else:
+                return my_record.num
     else:
         return 0
 
 
-def get_postgresql_create_sql(ms_engine, mssql_table_name, pgsql_table_name):
-    table_list = get_tables_list(ms_engine)
+def get_postgresql_create_sql(alchemy_engine, mssql_table_name, pgsql_table_name):
+    table_list = get_tables_list(alchemy_engine)
     if mssql_table_name in table_list:
         print("### MSSQL found table : {t} in mssql db, will build CREATE 4 postgresql ".format(t=mssql_table_name))
-        # sa_table = get_mssql_alchemy_table(ms_engine, mssql_table_name)
-        inspectTool = sa.inspect(ms_engine)
-        tableColumns = inspectTool.get_columns(mssql_table_name)
-        arrPrimaryKeysColumns = inspectTool.get_pk_constraint(mssql_table_name)['constrained_columns']
+        # sa_table = get_mssql_alchemy_table(engine, mssql_table_name)
+        inspect_tool = sa.inspect(alchemy_engine)
+        table_columns = inspect_tool.get_columns(mssql_table_name)
+        arr_primary_keys_columns = inspect_tool.get_pk_constraint(mssql_table_name)['constrained_columns']
         primary_key = "\n\t CONSTRAINT pk_{t} PRIMARY KEY (".format(t=pgsql_table_name)
         sql_query = "CREATE TABLE {t} (".format(t=pgsql_table_name)
         arr_cols = []
         arr_primary_keys = []
-        for c in tableColumns:
+        for c in table_columns:
             col_name = c['name'].lower()
             col_type = get_pgsqltype_from_mssql(c)
             col_nullable = '' if c['nullable'] else 'NOT NULL'
             arr_cols.append("\n\t {name} {type} {isnull}".format(name=col_name,
                                                                  type=col_type,
                                                                  isnull=col_nullable))
-            if c['name'] in arrPrimaryKeysColumns:
+            if c['name'] in arr_primary_keys_columns:
                 arr_primary_keys.append(col_name)
         sql_query += ",".join(arr_cols)
         if len(arr_primary_keys) > 0:
@@ -370,16 +334,16 @@ def get_postgresql_create_sql(ms_engine, mssql_table_name, pgsql_table_name):
         print("### ERROR table : {t} NOT FOUND in mssql db ".format(t=mssql_table_name))
 
 
-def get_select_for_postgresql(ms_engine, mssql_table_name, mssql_where_condition = ''):
-    table_list = get_tables_list(ms_engine)
+def get_select_for_postgresql(alchemy_engine, mssql_table_name, mssql_where_condition=''):
+    table_list = get_tables_list(alchemy_engine)
     if mssql_table_name in table_list:
         print("### MSSQL table : {t} found".format(t=mssql_table_name))
-        # table = get_mssql_alchemy_table(ms_engine, mssql_table_name)
-        inspectTool = sa.inspect(ms_engine)
-        tableColumns = inspectTool.get_columns(mssql_table_name)
+        # table = get_mssql_alchemy_table(engine, mssql_table_name)
+        inspect_tool = sa.inspect(alchemy_engine)
+        table_columns = inspect_tool.get_columns(mssql_table_name)
         sql_query = "SELECT  "
         arr_cols = []
-        for c in tableColumns:
+        for c in table_columns:
             col_name = c['name'].lower()
             col_type = get_pgsqltype_from_mssql(c)
             if c['nullable']:
@@ -392,7 +356,7 @@ def get_select_for_postgresql(ms_engine, mssql_table_name, mssql_where_condition
                 elif col_type == 'timestamp':
                     arr_cols.append(
                         " [{name}]=COALESCE(CONVERT(VARCHAR(1000),[{src_name}],21),'\\N')".format(name=col_name,
-                                                                                               src_name=c['name']))
+                                                                                                  src_name=c['name']))
                 else:
                     arr_cols.append(
                         " [{name}]=COALESCE(CONVERT(VARCHAR(1000),[{src_name}]),'\\N')".format(name=col_name,
@@ -420,19 +384,20 @@ def get_select_for_postgresql(ms_engine, mssql_table_name, mssql_where_condition
         exit(1)
 
 
-def get_dbserver_collation(ms_engine):
-    ms_cursor = ms_engine.execute("SELECT CONVERT(VARCHAR,SERVERPROPERTY('Collation')) as encoding")
-    row = ms_cursor.fetchone()
-    if not row:
-        return None
-    else:
-        return row.encoding
+def get_dbserver_collation(alchemy_engine):
+    with alchemy_engine.connect() as ms_connection:
+        ms_cursor = ms_connection.execute(text("SELECT CONVERT(VARCHAR,SERVERPROPERTY('Collation')) as encoding"))
+        record = ms_cursor.fetchone()
+        if not record:
+            return None
+        else:
+            return record.encoding
 
 
 if __name__ == '__main__':
     print("##### MSSQL BEGIN Connecting to DATABASE with pyodbc #####")
-    ms_engine = get_engine()
-    my_cursor = get_cursor(ms_engine)
+    engine = get_engine()
+    my_cursor = get_cursor(engine)
     print("##### MSSQL DATABASE VERSION with pyodbc #####")
     my_cursor.execute("SELECT @@version")
     while 1:
@@ -441,5 +406,5 @@ if __name__ == '__main__':
             break
         print(row[0])
     print("### MSSQL Executing SQL query to DATABASE with pyodbc ###")
-    query(ms_engine, "select TOP 10 IdDocument, DocTitle, datecreated from document ORDER BY IdDocument DESC")
+    query(engine, "select TOP 10 IdDocument, DocTitle, datecreated from document ORDER BY IdDocument DESC")
     print("##### MSSQL END of TEST with pyodbc #####")

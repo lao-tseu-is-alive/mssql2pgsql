@@ -1,10 +1,11 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 import urllib
-
+from urllib.parse import quote
 import psycopg2
 import sqlalchemy as sa
 import sqlalchemy.exc
+from sqlalchemy import text
 
 from config import config_pgsql as config
 
@@ -47,7 +48,7 @@ def bulk_copy(pg_engine, data, pgsql_table_name, field_separator):
 def truncate_table(pg_engine, pgsql_table_name):
     connection = pg_engine.raw_connection()
     try:
-        with  connection.cursor() as cursor:
+        with connection.cursor() as cursor:
             cursor.execute("TRUNCATE {table} RESTART IDENTITY;".format(table=pgsql_table_name))
             cursor.close()
         connection.commit()
@@ -64,7 +65,8 @@ def action_query(pg_engine, pgsql_action_query):
     # http://docs.sqlalchemy.org/en/rel_1_0/core/connections.html#understanding-autocommit
     connection = pg_engine.connect()
     try:
-        connection.execute(sa.sql.expression.text(pgsql_action_query).execution_options(autocommit=True))
+        connection.execute(text(pgsql_action_query))
+        connection.commit()
     except sa.exc.SQLAlchemyError as e:
         print("## ERROR PGSQL action_query ")
         print("Action query was : {sql}".format(sql=pgsql_action_query))
@@ -83,38 +85,35 @@ def does_table_exist(pg_engine, pgsql_table_name, pg_schema='public'):
     return pgsql_table_name in get_tables_list(pg_engine, pg_schema)
 
 
-def get_table(pg_engine, pgsql_table_name, pg_schema='public'):
-    meta = sa.MetaData(bind=pg_engine, reflect=False, schema=pg_schema)
-    meta.reflect(bind=pg_engine, only=[pgsql_table_name])
-    return sa.Table(pgsql_table_name, meta, autoLoad=True)
-
-
 def get_count(pg_engine, pgsql_table_name):
     """ to get number of records in table """
     if does_table_exist(pg_engine, pgsql_table_name):
-        ms_cursor = pg_engine.execute('SELECT COUNT(*) as num FROM ' + pgsql_table_name)
-        row = ms_cursor.fetchone()
-        if not row:
-            return None
-        else:
-            return row.num
+        with pg_engine.connect() as connection:
+            cursor = connection.execute(text('SELECT COUNT(*) as num FROM ' + pgsql_table_name))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            else:
+                return row.num
     else:
         return 0
 
 
 def get_dbserver_encoding(pg_engine):
-    ms_cursor = pg_engine.execute('SHOW SERVER_ENCODING;')
-    row = ms_cursor.fetchone()
-    if not row:
-        return None
-    else:
-        return row[0]
+    with pg_engine.connect() as connection:
+        cursor = connection.execute(text('SHOW SERVER_ENCODING;'))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        else:
+            return row[0]
 
 
 def get_dbclient_encoding(pg_engine):
-    ms_cursor = pg_engine.execute('SHOW CLIENT_ENCODING;')
-    row = ms_cursor.fetchone()
-    if not row:
-        return None
-    else:
-        return row[0]
+    with pg_engine.connect() as connection:
+        cursor = connection.execute(text('SHOW CLIENT_ENCODING;'))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        else:
+            return row[0]

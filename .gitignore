@@ -138,3 +138,8 @@ ENV/
 config/config_goeland_mssql.py
 *.txt
 .idea/
+/.venv/
+/tools_old/
+/gofontaine/
+/cgtest_goelanddbconnect.py
+/replicate_all_goeland.sh
