@@ -143,3 +143,4 @@ config/config_goeland_mssql.py
 /gofontaine/
 /cgtest_goelanddbconnect.py
 /replicate_all_goeland.sh
+/config/config_pgsql.py_go_cloud_k8s_user_group
