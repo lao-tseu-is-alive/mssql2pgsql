@@ -15,17 +15,8 @@ ms_table_dict_lower = {ms.convert_to_snake_case(table): table for table in ms_ta
 ms_table_list_lower = sorted([ms.convert_to_snake_case(table) for table in ms_table_list])
 pg_table_set = set(sorted(pg.get_tables_list(pg_engine)))
 missing_tables = [table for table in ms_table_list_lower if table not in pg_table_set]
-print("### {num} TABLES IN MSSQL        #####".format(num=len(ms_table_list)))
-print("### {num} TABLES COPIED TO PGSQL #####".format(num=len(ms_table_list) - len(missing_tables)))
-print("### {num} MISSING TABLES IN PGSQL #####".format(num=len(missing_tables)))
-for table in missing_tables:
-    print(ms_table_dict_lower[table])
-    # print("{t}\t{c}\tMSSQL:\t{mst}\t{msc}".format(t=table,
-    #                                               c=pg.get_count(pg_engine, table),
-    #                                               mst=ms_table_dict_lower[table],
-    #                                               msc=ms.get_count(ms_engine, ms_table_dict_lower[table])))
 
-print("### TABLES WITH MORE THEN 5% MISSING RECORDS IN PGSQL #####")
+print("### let's check tables that have MORE THEN 5% MISSING RECORDS IN PGSQL #####")
 for table in sorted(pg.get_tables_list(pg_engine)):
     if table in ms_table_dict_lower:
         num_rows_pgsql = pg.get_count(pg_engine, table)
@@ -33,7 +24,12 @@ for table in sorted(pg.get_tables_list(pg_engine)):
         # we allow 5% difference
         tolerance = num_rows_mssql * 0.05
         if (num_rows_mssql - num_rows_pgsql) > tolerance:
-            print("{t}\t{c}\tMSSQL:\t{mst}\t{msc}".format(t=table,
-                                                          c=pg.get_count(pg_engine, table),
-                                                          mst=ms_table_dict_lower[table],
-                                                          msc=ms.get_count(ms_engine, ms_table_dict_lower[table])))
+            print(f"❌ {table:<60} \t rows in mssql/pgsql: {num_rows_mssql:9}/{num_rows_pgsql} \t 📌 more then 5% missing from {ms_table_dict_lower[table]}")
+        else:
+            print(f"✅ {table:<60} \t rows in mssql/pgsql: {num_rows_mssql:9}/{num_rows_pgsql}")
+
+print(f"## 🏁 {len(ms_table_list):6} TABLES IN MSSQL        #####")
+print(f"## 🏁 {(len(ms_table_list) - len(missing_tables)):6} TABLES COPIED TO PGSQL #####")
+print(f"## 🏁 {len(missing_tables):6} MISSING TABLES IN PGSQL #####")
+for table in missing_tables:
+    print(ms_table_dict_lower[table])

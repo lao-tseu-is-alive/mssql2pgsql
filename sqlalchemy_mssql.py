@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import datetime
 import re
+import sys
 from urllib.parse import quote
 
 import pyodbc
@@ -11,24 +12,38 @@ import sqlalchemy.sql.schema
 from sqlalchemy import text
 from sqlalchemy.sql import sqltypes
 
-from config import config_goeland_mssql as config
+from config import MSSQLConfig as confMs
 
 _cached_tables_list = None
 
 
 def get_engine():
-    """ will return a valid SqlAlchemy engine"""
-    # need to urlquote password because if your password contains some exotic chars like say @ your dead...
-    sqlalchemy_connection = "mssql+pyodbc://" + config.my_user + ":" \
-                            + quote(config.my_password) \
-                            + "@" + config.my_dsn
-    # + '?charset=utf8'
-    # deprecate_large_types=True may be useful for NVARCHAR('max') in MSSQL > 2012
-    return sa.create_engine(sqlalchemy_connection, echo=False,
-                            connect_args={'convert_unicode': True},
+    """
+   Returns a valid SqlAlchemy engine and tests the connection.
+   Fails early if the database is not available.
+   """
+    try:
+        sqlalchemy_connection = "mssql+pyodbc://" + confMs.user + ":" \
+                                + quote(confMs.password) \
+                                + "@" + confMs.dsn
+        db = sa.create_engine(sqlalchemy_connection, echo=False,
+                              connect_args={'convert_unicode': True},
+                              legacy_schema_aliasing=False
+                              )
+        # -- Fail Early Connection Test --
+        # Try to establish a connection to verify credentials and server availability.
+        # print("mssql> Testing database connection...")
+        with db.connect() as connection:
+            print("✅ mssql> Connection successful.")
 
-                            legacy_schema_aliasing=False
-                            )
+        return db
+
+    except sa.exc.OperationalError as e:
+        print(f"❌ mssql> ERROR: Database connection failed: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ mssql> ERROR: An unexpected error occurred: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def get_cursor(alchemy_engine):

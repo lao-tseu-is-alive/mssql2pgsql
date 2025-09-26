@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
+import sys
 import urllib
 from urllib.parse import quote
 import psycopg2
@@ -7,16 +8,35 @@ import sqlalchemy as sa
 import sqlalchemy.exc
 from sqlalchemy import text
 
-from config import config_pgsql as config
+from config import PGSQLConfig as confPG
 
 
 def get_engine():
-    # need to urlquote password because if your password contains some exotic chars like say @ your dead...
-    sqlalchemy_connection = "postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}".format(
-        user=config.my_user, password=urllib.parse.quote(config.my_password), host=config.my_host, port=config.my_port,
-        dbname=config.my_dbname)
-    # print(sqlalchemy_connection)
-    return sa.create_engine(sqlalchemy_connection, echo=False)
+    """
+   Returns a valid SqlAlchemy engine and tests the connection.
+   Fails early if the database is not available.
+   """
+    try:
+        sqlalchemy_connection = "postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}".format(
+            user=confPG.user, password=urllib.parse.quote(confPG.password),
+            host=confPG.host, port=confPG.port,
+            dbname=confPG.dbname)
+        db = sa.create_engine(sqlalchemy_connection, echo=False)
+        # -- Fail Early Connection Test --
+        # Try to establish a connection to verify credentials and server availability.
+        # print("mssql> Testing database connection...")
+        with db.connect() as connection:
+            print("✅ pgsql> Connection successful.")
+
+        return db
+
+    except sa.exc.OperationalError as e:
+        print(f"❌ pgsql> ERROR: Database connection failed: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ pgsql> ERROR: An unexpected error occurred: {e}", file=sys.stderr)
+        sys.exit(1)
+
 
 
 def get_cursor(pg_engine):
